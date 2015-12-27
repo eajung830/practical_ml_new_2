@@ -20,6 +20,11 @@ library(lattice)
 training <- read.csv("./pml-training.csv")
 testing <- read.csv("./pml-testing.csv")
 
+set.seed(1000)
+insample <- createDataPartition(y=training$classe,p=0.7, list = FALSE)
+validation <- training[-insample,]
+training <- training[insample,]
+
 # check for two types of predictors in training set for removal
 #   1.  majority of values are missing (90%)
 #   2.  any values are missing (either blank, div/0, or NA)
@@ -43,16 +48,21 @@ removelist <- unique(c(removelist,nsvlist))
 
 ## remove data from remove list
 training_postprocess = training[,-removelist]
+validation_postprocess = validation[,-removelist]
 testing_postprocess = testing[,-removelist]
 
 ## modelfit and prediction
 modFit <- randomForest(classe ~ ., training_postprocess, ntree=100, norm.votes=FALSE)
 pred_training <- predict(modFit, training_postprocess)
+pred_validaiton <- predict(modFit,validation_postprocess)
 pred_testing <- predict(modFit, testing_postprocess)
 
 ```
 
 ## Feature Investigation and Covariate Determination
+
+In order to have data to perform cross validation, the first step taken after reading in the data is to take a random 70% of the  training set samples to train the model (13737 samples), and use the other 30% as a validation data set (5885 samples). 
+
 Using *qplot()*, several different plots are obtained comparing the training set outcome variable **classe** and various observation variables. The following is one such example, showing the number of outcomes color-coded by the subject names. The figure shows that the number of outcomes does not seem particularly weighted towards any particular subject:
 
 ```{r, echo=FALSE}
@@ -67,19 +77,23 @@ However, the most revealing trend came from the *summary()* function on the trai
 names(training)[removelist]
 ```
 
-The number of observations per record was therefore reduced from 159 to 53 on which to train the predictive model. Some principle component analysis was also performed showing that only 80% of variation could be obtained with 13 covariates, but this was ultimately abandoned in the final model as it did not lead to any obvious benefit in model accuracy or computational efficiency. Ultimately, all 53 remaining variables were used as features to the predictive model. The testing set was also processed to remove all but the remaining 53 variables identical to the training set. We also note that the 53 remaining variables had **no missing values**, and therefore no imputation was necessary to fill in the missing values and no samples were removed, leaving 19622 samples in the training set with which to train the model.
+The number of observations per record was therefore reduced from 159 to 53 on which to train the predictive model. Some principle component analysis was also performed showing that only 80% of variation could be obtained with 13 covariates, but this was ultimately abandoned in the final model as it did not lead to any obvious benefit in model accuracy or computational efficiency. Ultimately, all 53 remaining variables were used as features to the predictive model. The testing set was also processed to remove all but the remaining 53 variables identical to the training set. We also note that the 53 remaining variables had **no missing values**, and therefore no imputation was necessary to fill in the missing values and no samples were removed, leaving 13737 samples in the training set. 
+
+These same columns were also removed from the validation and test set data.
 
 ## Model Creation
 
-A random forest model fit was chosen. With the 53 different variables remaining, there was great potential for non-linearity in the model, and along with the recommendation for accuracy from the random forest lecture, it seemed to be the most obvious first choice. Due to the long runtime of using the caret *train* version for random forest, the *randomForest* library was included, and *randomForest()* function used instead. The randomForest is set to grow 100 trees based on sampling with replacement (i.e. bootstrapping), and the model summary is as follows:
+A random forest model fit was chosen. With the 53 different variables remaining, there was great potential for non-linearity in the model, and along with the recommendation for accuracy from the random forest lecture, it seemed to be the most obvious first choice. As mentioned before, we only take a random 70% of the  training set samples to train the model (13737 samples), and use the other 30% as a validation data set (5885). Given the number of samples being reported and the relatively large size of the validation set we feel this should be a strong enough sample to estimate out-of-sample error.
+
+Due to the long runtime of using the caret *train* version for random forest, the *randomForest* library was included, and *randomForest()* function used instead. The randomForest is set to grow 100 trees based on sampling with replacement (i.e. bootstrapping), and the model summary is as follows:
 
 ```{r, echo = FALSE}
 print(modFit)
 ```
 
-Note that the predicted out-of-band error here is a miniscule 0.16%.
+Note that the predicted out-of-band error here is 0.33%.
 
-## Prediction and Comparison with the Original Training Matrix
+## Prediction, Cross Validation, and Final Output
 
 Using the modelfit (variable name *modFit*), we obtain the predictions for all 19622 samples, and create a confusion matrix with the original predictions. 
 
@@ -88,7 +102,16 @@ pred_training <- predict(modFit, training_postprocess)
 confusionMatrix(pred_training,training$classe)
 ```
 
-As can be seen, the confusionMatrix results in a **100%** match between the predicted value and the training set outcome. Finally, we use the *predict* command to obtain the predictions for the testing set. This resulted in a 100% match in the project submission.
+As can be seen, the confusionMatrix results in a **100%** match between the predicted value and the training set outcome. Therefore, the in-sample error in this case is 0%. However, since this RandomForest is based on only 70% of the samples, cross validating with the held back 30% can help us estimate out-of-sample error.  
+
+```{r}
+pred_validation <- predict(modFit, validation_postprocess)
+confusionMatrix(pred_validation,validation$classe)
+```
+
+From this confusion matrix, we can see that the accuracy is 99.68%, resulting in an out-of-sample error of roughly 0.32%. This means that even for samples not considered in the training set, we are still achieving an extremely high accuracy.
+
+Finally, we use the *predict* command to obtain the predictions for the testing set. This resulted in a 100% match in the project submission.
 
 ```{r, echo = FALSE}
 pred_testing <- predict(modFit, testing_postprocess)

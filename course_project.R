@@ -27,6 +27,11 @@ source("./pml_write_files.R")
 training <- read.csv("./pml-training.csv")
 testing <- read.csv("./pml-testing.csv")
 
+set.seed(1000)
+insample <- createDataPartition(y=training$classe,p=0.7, list = FALSE)
+validation <- training[-insample,]
+training <- training[insample,]
+
 # check for two types of predictors in training set for removal
 #   1.  majority of values are missing (90%)
 #   2.  any values are missing (either blank, div/0, or NA)
@@ -47,17 +52,19 @@ for(i in 1 : dim(training)[2]){
 
 nsvlist <-  nearZeroVar(training)
 removelist <- unique(c(removelist,nsvlist))
-                     
+
 ## remove data from remove list
 training_postprocess = training[,-removelist]
+validation_postprocess = validation[,-removelist]
 testing_postprocess = testing[,-removelist]
 
 ## modelfit and prediction
-modFit1 <- randomForest(classe ~ ., training_postprocess, ntree=100, norm.votes=FALSE, replace = FALSE)
 modFit <- randomForest(classe ~ ., training_postprocess, ntree=100, norm.votes=FALSE)
 pred_training <- predict(modFit, training_postprocess)
+pred_validation <- predict(modFit, validation_postprocess)
 pred_testing <- predict(modFit, testing_postprocess)
 
 confusionMatrix(pred_training,training$classe)
+confusionMatrix(pred_validation,validation$classe)
 
 # pml_write_files(pred_testing)
